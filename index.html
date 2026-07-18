@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TACKLE LOG | ロッド・リール管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  body { font-family: 'Source Sans 3', sans-serif; background:#0A0E14; }
+  .font-oswald { font-family: 'Oswald', sans-serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  ::selection { background:#29C4F0; color:#06232B; }
+  .hero-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(46px);
+    opacity: 0.45;
+    mix-blend-mode: screen;
+    animation: heroDrift 14s ease-in-out infinite;
+  }
+  @keyframes heroDrift {
+    0%   { transform: translate(0, 0) scale(1); }
+    33%  { transform: translate(22px, -18px) scale(1.12); }
+    66%  { transform: translate(-16px, 14px) scale(0.94); }
+    100% { transform: translate(0, 0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hero-blob { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback } = React;
+
+/* ---------------------------------------------------------
+   TACKLE LOG — standalone build for GitHub Pages
+   (no build step: React + Babel standalone + Tailwind CDN)
+   Data is stored in the browser's localStorage.
+--------------------------------------------------------- */
+
+/* ---------- minimal inline icon set (replaces lucide-react) ---------- */
+function Icon({ path, size = 18, className = "", viewBox = "0 0 24 24" }) {
+  return (
+    <svg width={size} height={size} viewBox={viewBox} fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {path}
+    </svg>
+  );
+}
+const IPlus = (p) => <Icon {...p} path={<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>} />;
+const IX = (p) => <Icon {...p} path={<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>} />;
+const IPencil = (p) => <Icon {...p} path={<><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></>} />;
+const ITrash = (p) => <Icon {...p} path={<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></>} />;
+const IDownload = (p) => <Icon {...p} path={<><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14"/></>} />;
+const IAnchor = (p) => <Icon {...p} path={<><line x1="12" y1="22" x2="12" y2="8"/><circle cx="12" cy="5" r="3"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></>} />;
+const IWaves = (p) => <Icon {...p} path={<><path d="M2 12c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></>} />;
+const IRuler = (p) => <Icon {...p} path={<><rect x="2" y="8" width="20" height="8" rx="1"/><path d="M6 8v3"/><path d="M10 8v3"/><path d="M14 8v3"/><path d="M18 8v3"/></>} />;
+const IWeight = (p) => <Icon {...p} path={<><circle cx="12" cy="5" r="3"/><path d="M6.5 8h11l2 12a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2z"/></>} />;
+const IDisc = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></>} />;
+const IChevronDown = (p) => <Icon {...p} path={<polyline points="6 9 12 15 18 9"/>} />;
+const IChevronRight = (p) => <Icon {...p} path={<polyline points="9 18 15 12 9 6"/>} />;
+const IHome = (p) => <Icon {...p} path={<><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></>} />;
+const ISettings = (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></>} />;
+const IAlert = (p) => <Icon {...p} path={<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />;
+
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const LINE_TYPES = ["PE", "フロロカーボン", "ナイロン"];
+const LINE_COLORS = {
+  "PE": { ring: "#8FD13F", text: "#0F1B08" },
+  "フロロカーボン": { ring: "#5FC3EE", text: "#08161C" },
+  "ナイロン": { ring: "#F0A24B", text: "#20120A" },
+};
+const emptyLineSpec = () => ({ id: uid(), lineType: "PE", go: "", lb: "", lengthM: "", color: "", dateSpooled: "" });
+const emptyRod = () => ({ id: uid(), name: "", brand: "", lengthCm: "", pieces: "", action: "", lureMin: "", lureMax: "", lineGoMin: "", lineGoMax: "", targetFish: "", price: "", purchaseDate: "", notes: "" });
+const emptyReel = () => ({ id: uid(), name: "", brand: "", type: "スピニング", size: "", gearRatio: "", maxDrag: "", weightG: "", lineSpecs: [emptyLineSpec()], notes: "" });
+
+/* ---------- localStorage-backed state ---------- */
+function useLocalData(key, fallback) {
+  const [data, setData] = useState(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+  });
+  const persist = useCallback((next) => {
+    setData(next);
+    try { localStorage.setItem(key, JSON.stringify(next)); }
+    catch (e) { console.error("保存に失敗しました", e); }
+  }, [key]);
+  return [data, persist];
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function csvEscape(v) {
+  const s = v === undefined || v === null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/* ---------- form primitives ---------- */
+function Field({ label, children, span }) {
+  return (
+    <label className={`flex flex-col gap-1 ${span ? "sm:col-span-2" : ""}`}>
+      <span className="text-[11px] tracking-wide uppercase text-[#6E7C8C] font-semibold font-oswald">{label}</span>
+      {children}
+    </label>
+  );
+}
+const inputCls = "w-full bg-[#111820] border border-[#26323F] rounded-md px-2.5 py-1.5 text-[14px] text-[#EAF2F7] font-oswald tracking-wide focus:outline-none focus:ring-2 focus:ring-[#29C4F0] focus:border-[#29C4F0] placeholder:text-[#4C5B6B]";
+function TextInput(props) { return <input {...props} className={inputCls + " " + (props.className || "")} />; }
+function Select({ value, onChange, options, ...rest }) {
+  return (
+    <div className="relative">
+      <select value={value} onChange={onChange} {...rest} className={inputCls + " appearance-none pr-7"}>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <IChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[#6E7C8C]" />
+    </div>
+  );
+}
+
+/* ---------- spool badge ---------- */
+function SpoolBadge({ spec }) {
+  const palette = LINE_COLORS[spec.lineType] || LINE_COLORS["ナイロン"];
+  return (
+    <div className="flex items-center gap-2.5 rounded-full pl-1.5 pr-3 py-1.5 border" style={{ background: "#111820", borderColor: palette.ring + "55" }}>
+      <div className="shrink-0 w-9 h-9 rounded-full flex flex-col items-center justify-center font-mono leading-none" style={{ background: palette.ring, color: palette.text }}>
+        <span className="text-[10px] font-bold">{spec.go ? `${spec.go}号` : "—"}</span>
+        <span className="text-[8px] opacity-90">{spec.lb ? `${spec.lb}lb` : ""}</span>
+      </div>
+      <div className="text-[12px] leading-tight font-oswald text-[#EAF2F7]">
+        <div className="font-semibold">{spec.lineType}</div>
+        <div className="text-[#6E7C8C] font-mono text-[11px]">{spec.lengthM ? `${spec.lengthM}m` : ""}{spec.color ? ` ・ ${spec.color}` : ""}</div>
+      </div>
+    </div>
+  );
+}
+
+function Spec({ icon, label, value }) {
+  return (
+    <div className="flex items-center gap-1 text-[#D7E0E8]">
+      {icon}
+      <span className="text-[#6E7C8C] text-[11px] font-oswald">{label}</span>
+      <span className="ml-auto">{value}</span>
+    </div>
+  );
+}
+
+/* ---------- cards ---------- */
+function RodCard({ rod, onEdit, onDelete }) {
+  return (
+    <div className="relative bg-[#131B24] border border-[#26323F] rounded-lg p-4 flex flex-col gap-3">
+      <div className="absolute -top-2 left-4 bg-[#29C4F0] text-[#06232B] text-[10px] tracking-[0.15em] uppercase px-2 py-0.5 rounded-sm font-oswald font-semibold">Rod</div>
+      <div className="flex items-start justify-between gap-2 mt-1">
+        <div>
+          <h3 className="font-oswald text-[19px] tracking-wide text-[#EAF2F7] leading-tight">{rod.name || "(名称未設定)"}</h3>
+          <p className="text-[12px] text-[#6E7C8C] font-oswald">{rod.brand}</p>
+        </div>
+        <div className="flex gap-1 shrink-0">
+          <button onClick={() => onEdit(rod)} className="p-1.5 rounded hover:bg-[#1B2530] text-[#8A97A6]"><IPencil size={15} /></button>
+          <button onClick={() => onDelete(rod.id)} className="p-1.5 rounded hover:bg-[#2A1A16] text-[#E2694B]"><ITrash size={15} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] font-mono">
+        <Spec icon={<IRuler size={12} />} label="長さ" value={rod.lengthCm ? `${rod.lengthCm}cm` : "—"} />
+        <Spec icon={<IDisc size={12} />} label="継数" value={rod.pieces ? `${rod.pieces}本継` : "—"} />
+        <Spec label="アクション" value={rod.action || "—"} />
+        <Spec label="対象魚" value={rod.targetFish || "—"} />
+        <Spec label="適合ルアー" value={rod.lureMin || rod.lureMax ? `${rod.lureMin || "0"}–${rod.lureMax || "?"}g` : "—"} />
+        <Spec label="適合ライン" value={rod.lineGoMin || rod.lineGoMax ? `${rod.lineGoMin || "0"}–${rod.lineGoMax || "?"}号` : "—"} />
+      </div>
+      {(rod.price || rod.purchaseDate) && (
+        <div className="text-[11px] text-[#6E7C8C] font-oswald flex gap-3 pt-1 border-t border-dashed border-[#26323F]">
+          {rod.purchaseDate && <span>購入日: {rod.purchaseDate}</span>}
+          {rod.price && <span>¥{Number(rod.price).toLocaleString()}</span>}
+        </div>
+      )}
+      {rod.notes && <p className="text-[12px] text-[#AEB9C4] leading-relaxed whitespace-pre-wrap">{rod.notes}</p>}
+    </div>
+  );
+}
+
+function ReelCard({ reel, onEdit, onDelete }) {
+  return (
+    <div className="relative bg-[#131B24] border border-[#26323F] rounded-lg p-4 flex flex-col gap-3">
+      <div className="absolute -top-2 left-4 bg-[#F0A24B] text-[#2A1707] text-[10px] tracking-[0.15em] uppercase px-2 py-0.5 rounded-sm font-oswald font-semibold">Reel</div>
+      <div className="flex items-start justify-between gap-2 mt-1">
+        <div>
+          <h3 className="font-oswald text-[19px] tracking-wide text-[#EAF2F7] leading-tight">{reel.name || "(名称未設定)"}</h3>
+          <p className="text-[12px] text-[#6E7C8C] font-oswald">{reel.brand} {reel.size && `・ ${reel.size}番`}</p>
+        </div>
+        <div className="flex gap-1 shrink-0">
+          <button onClick={() => onEdit(reel)} className="p-1.5 rounded hover:bg-[#1B2530] text-[#8A97A6]"><IPencil size={15} /></button>
+          <button onClick={() => onDelete(reel.id)} className="p-1.5 rounded hover:bg-[#2A1A16] text-[#E2694B]"><ITrash size={15} /></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[13px] font-mono">
+        <Spec label="タイプ" value={reel.type || "—"} />
+        <Spec icon={<IWeight size={12} />} label="自重" value={reel.weightG ? `${reel.weightG}g` : "—"} />
+        <Spec label="ギア比" value={reel.gearRatio || "—"} />
+        <Spec label="最大ドラグ" value={reel.maxDrag ? `${reel.maxDrag}kg` : "—"} />
+      </div>
+      {reel.lineSpecs?.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-2 border-t border-dashed border-[#26323F]">
+          <span className="text-[11px] text-[#6E7C8C] font-oswald uppercase tracking-wide">巻いているライン</span>
+          <div className="flex flex-wrap gap-1.5">{reel.lineSpecs.map((s) => <SpoolBadge key={s.id} spec={s} />)}</div>
+        </div>
+      )}
+      {reel.notes && <p className="text-[12px] text-[#AEB9C4] leading-relaxed whitespace-pre-wrap">{reel.notes}</p>}
+    </div>
+  );
+}
+
+/* ---------- forms ---------- */
+function RodForm({ initial, onSave, onCancel }) {
+  const [rod, setRod] = useState(initial);
+  const set = (k) => (e) => setRod({ ...rod, [k]: e.target.value });
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSave(rod); }} className="flex flex-col gap-4">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="ロッド名"><TextInput required value={rod.name} onChange={set("name")} placeholder="例: 20 ヴァンキッシュ 2610MS" /></Field>
+        <Field label="メーカー"><TextInput value={rod.brand} onChange={set("brand")} placeholder="例: シマノ" /></Field>
+        <Field label="長さ (cm)"><TextInput type="number" value={rod.lengthCm} onChange={set("lengthCm")} placeholder="244" /></Field>
+        <Field label="継数"><TextInput type="number" value={rod.pieces} onChange={set("pieces")} placeholder="2" /></Field>
+        <Field label="アクション/硬さ"><TextInput value={rod.action} onChange={set("action")} placeholder="例: ML / ファースト" /></Field>
+        <Field label="対象魚"><TextInput value={rod.targetFish} onChange={set("targetFish")} placeholder="例: シーバス" /></Field>
+        <Field label="適合ルアー 下限(g)"><TextInput type="number" value={rod.lureMin} onChange={set("lureMin")} /></Field>
+        <Field label="適合ルアー 上限(g)"><TextInput type="number" value={rod.lureMax} onChange={set("lureMax")} /></Field>
+        <Field label="適合ライン 下限(号)"><TextInput type="number" step="0.1" value={rod.lineGoMin} onChange={set("lineGoMin")} /></Field>
+        <Field label="適合ライン 上限(号)"><TextInput type="number" step="0.1" value={rod.lineGoMax} onChange={set("lineGoMax")} /></Field>
+        <Field label="購入日"><TextInput type="date" value={rod.purchaseDate} onChange={set("purchaseDate")} /></Field>
+        <Field label="価格 (円)"><TextInput type="number" value={rod.price} onChange={set("price")} /></Field>
+        <Field label="メモ" span><textarea value={rod.notes} onChange={set("notes")} rows={3} className={inputCls} placeholder="調子の癖、修理歴など" /></Field>
+      </div>
+      <FormActions onCancel={onCancel} />
+    </form>
+  );
+}
+
+function ReelForm({ initial, onSave, onCancel }) {
+  const [reel, setReel] = useState(initial);
+  const set = (k) => (e) => setReel({ ...reel, [k]: e.target.value });
+  const updateLine = (id, k, v) => setReel({ ...reel, lineSpecs: reel.lineSpecs.map((s) => (s.id === id ? { ...s, [k]: v } : s)) });
+  const addLine = () => setReel({ ...reel, lineSpecs: [...reel.lineSpecs, emptyLineSpec()] });
+  const removeLine = (id) => setReel({ ...reel, lineSpecs: reel.lineSpecs.filter((s) => s.id !== id) });
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSave(reel); }} className="flex flex-col gap-4">
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="リール名"><TextInput required value={reel.name} onChange={set("name")} placeholder="例: 22 ステラ C3000MHG" /></Field>
+        <Field label="メーカー"><TextInput value={reel.brand} onChange={set("brand")} placeholder="例: シマノ" /></Field>
+        <Field label="タイプ"><Select value={reel.type} onChange={set("type")} options={["スピニング", "ベイトキャスティング", "両軸(オフショア)"]} /></Field>
+        <Field label="番手 (サイズ)"><TextInput value={reel.size} onChange={set("size")} placeholder="例: 3000" /></Field>
+        <Field label="ギア比"><TextInput value={reel.gearRatio} onChange={set("gearRatio")} placeholder="例: 6.2:1" /></Field>
+        <Field label="最大ドラグ (kg)"><TextInput type="number" step="0.1" value={reel.maxDrag} onChange={set("maxDrag")} /></Field>
+        <Field label="自重 (g)"><TextInput type="number" value={reel.weightG} onChange={set("weightG")} /></Field>
+      </div>
+      <div className="flex flex-col gap-2 border-t border-dashed border-[#26323F] pt-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] tracking-wide uppercase text-[#6E7C8C] font-semibold font-oswald">巻いているライン仕様</span>
+          <button type="button" onClick={addLine} className="flex items-center gap-1 text-[12px] font-oswald text-[#29C4F0] hover:text-[#6FDBFF]"><IPlus size={14} /> ライン追加</button>
+        </div>
+        {reel.lineSpecs.map((spec) => (
+          <div key={spec.id} className="grid grid-cols-2 sm:grid-cols-6 gap-2 bg-[#0F161D] p-2.5 rounded-md border border-[#26323F] items-end">
+            <Field label="種類"><Select value={spec.lineType} onChange={(e) => updateLine(spec.id, "lineType", e.target.value)} options={LINE_TYPES} /></Field>
+            <Field label="太さ (号)"><TextInput type="number" step="0.1" value={spec.go} onChange={(e) => updateLine(spec.id, "go", e.target.value)} placeholder="0.8" /></Field>
+            <Field label="強度 (lb)"><TextInput type="number" step="0.1" value={spec.lb} onChange={(e) => updateLine(spec.id, "lb", e.target.value)} placeholder="16" /></Field>
+            <Field label="長さ (m)"><TextInput type="number" value={spec.lengthM} onChange={(e) => updateLine(spec.id, "lengthM", e.target.value)} placeholder="150" /></Field>
+            <Field label="巻いた日"><TextInput type="date" value={spec.dateSpooled} onChange={(e) => updateLine(spec.id, "dateSpooled", e.target.value)} /></Field>
+            <div className="flex items-end gap-1.5">
+              <Field label="色/銘柄"><TextInput value={spec.color} onChange={(e) => updateLine(spec.id, "color", e.target.value)} placeholder="例: グロー" /></Field>
+              {reel.lineSpecs.length > 1 && <button type="button" onClick={() => removeLine(spec.id)} className="p-1.5 mb-0.5 rounded hover:bg-[#2A1A16] text-[#E2694B] shrink-0"><IX size={15} /></button>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Field label="メモ"><textarea value={reel.notes} onChange={set("notes")} rows={3} className={inputCls} placeholder="オーバーホール歴、使用感など" /></Field>
+      <FormActions onCancel={onCancel} />
+    </form>
+  );
+}
+
+function FormActions({ onCancel }) {
+  return (
+    <div className="flex justify-end gap-2 pt-1">
+      <button type="button" onClick={onCancel} className="px-4 py-2 text-[13px] font-oswald tracking-wide text-[#8A97A6] hover:text-[#EAF2F7]">キャンセル</button>
+      <button type="submit" className="px-5 py-2 text-[13px] font-oswald font-semibold tracking-wide bg-[#29C4F0] text-[#06232B] rounded-md hover:bg-[#6FDBFF]">保存する</button>
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-start sm:items-center justify-center p-3 overflow-y-auto" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-[#0F161D] w-full max-w-2xl rounded-lg border border-[#26323F] shadow-2xl my-6">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#26323F]">
+          <h2 className="font-oswald text-[16px] tracking-wide text-[#EAF2F7] uppercase">{title}</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-[#1B2530] text-[#8A97A6]"><IX size={18} /></button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ kind, onAdd }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center border border-dashed border-[#26323F] rounded-lg bg-[#0F161D]">
+      <IWaves size={26} className="text-[#3B4C5C]" />
+      <p className="font-oswald text-[#8A97A6] text-[14px]">{kind === "rods" ? "タックルボックスにロッドがまだありません" : "タックルボックスにリールがまだありません"}</p>
+      <button onClick={onAdd} className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-oswald font-semibold tracking-wide bg-[#29C4F0] text-[#06232B] rounded-md hover:bg-[#6FDBFF]"><IPlus size={15} /> 最初の一本を登録</button>
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-1 h-4 bg-[#29C4F0] rounded-sm"></span>
+      <h2 className="text-[15px] font-oswald font-semibold text-[#EAF2F7] tracking-wide">{children}</h2>
+    </div>
+  );
+}
+
+function CategoryCard({ label, icon, accent, onClick }) {
+  return (
+    <button onClick={onClick} className="relative aspect-[4/3] rounded-lg border border-[#26323F] overflow-hidden flex flex-col items-center justify-center gap-2 group" style={{ background: "linear-gradient(160deg, #131B24 0%, #0B1119 100%)" }}>
+      <span className="relative" style={{ color: accent }}>{icon}</span>
+      <span className="relative text-[14px] font-oswald font-semibold text-[#EAF2F7] tracking-wide">{label}</span>
+    </button>
+  );
+}
+
+function HomeScreen({ rods, reels, goto, onAddRod, onAddReel, onExportRods, onExportReels }) {
+  const recent = [...rods.map((r) => ({ ...r, kind: "rod" })), ...reels.map((r) => ({ ...r, kind: "reel" }))].slice(-4).reverse();
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="relative overflow-hidden rounded-xl border border-[#26323F] p-6" style={{ background: "#0A0E14" }}>
+        <div className="absolute inset-0">
+          <span className="hero-blob" style={{ width: 280, height: 280, top: -90, left: -60, background: "#29C4F0", animationDelay: "0s" }}></span>
+          <span className="hero-blob" style={{ width: 240, height: 240, bottom: -100, right: -50, background: "#F0A24B", animationDelay: "-5s" }}></span>
+          <span className="hero-blob" style={{ width: 200, height: 200, top: 20, right: 60, background: "#5FC3EE", animationDelay: "-9s" }}></span>
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(10,14,20,0.15) 0%, #0A0E14 92%)" }}></div>
+        </div>
+        <p className="relative text-[11px] tracking-[0.25em] uppercase text-[#29C4F0] font-oswald font-semibold mb-2">My Tackle Box</p>
+        <div className="relative flex items-end gap-8">
+          <div><div className="text-[40px] leading-none font-oswald font-semibold text-[#EAF2F7]">{rods.length}</div><div className="text-[12px] text-[#8A97A6] font-oswald mt-1">ロッド</div></div>
+          <div><div className="text-[40px] leading-none font-oswald font-semibold text-[#EAF2F7]">{reels.length}</div><div className="text-[12px] text-[#8A97A6] font-oswald mt-1">リール</div></div>
+        </div>
+      </div>
+      <div>
+        <SectionLabel>カテゴリから探す</SectionLabel>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <CategoryCard label="ロッド" icon={<IWaves size={26} />} accent="#29C4F0" onClick={() => goto("rods")} />
+          <CategoryCard label="リール" icon={<IDisc size={26} />} accent="#F0A24B" onClick={() => goto("reels")} />
+        </div>
+      </div>
+      <div>
+        <SectionLabel>クイック登録</SectionLabel>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <button onClick={onAddRod} className="flex items-center justify-center gap-1.5 py-3 rounded-lg border border-[#26323F] bg-[#131B24] text-[#EAF2F7] text-[13px] font-oswald hover:border-[#29C4F0]"><IPlus size={15} /> ロッドを登録</button>
+          <button onClick={onAddReel} className="flex items-center justify-center gap-1.5 py-3 rounded-lg border border-[#26323F] bg-[#131B24] text-[#EAF2F7] text-[13px] font-oswald hover:border-[#29C4F0]"><IPlus size={15} /> リールを登録</button>
+        </div>
+      </div>
+      {recent.length > 0 && (
+        <div>
+          <SectionLabel>最近追加したギア</SectionLabel>
+          <div className="flex flex-col gap-2 mt-2">
+            {recent.map((item) => (
+              <button key={item.id} onClick={() => goto(item.kind === "rod" ? "rods" : "reels")} className="flex items-center justify-between gap-3 bg-[#131B24] border border-[#26323F] rounded-lg px-4 py-3 text-left hover:border-[#29C4F0]">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: item.kind === "rod" ? "#29C4F022" : "#F0A24B22", color: item.kind === "rod" ? "#29C4F0" : "#F0A24B" }}>
+                    {item.kind === "rod" ? <IWaves size={15} /> : <IDisc size={15} />}
+                  </span>
+                  <div><div className="text-[13px] font-oswald text-[#EAF2F7]">{item.name || "(名称未設定)"}</div><div className="text-[11px] text-[#6E7C8C] font-oswald">{item.brand || (item.kind === "rod" ? "ロッド" : "リール")}</div></div>
+                </div>
+                <IChevronRight size={16} className="text-[#3B4C5C]" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <SectionLabel>エクスポート</SectionLabel>
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <button onClick={onExportRods} disabled={rods.length === 0} className="flex items-center justify-center gap-1.5 py-3 rounded-lg border border-[#26323F] bg-[#131B24] text-[#8A97A6] text-[13px] font-oswald hover:text-[#EAF2F7] hover:border-[#29C4F0] disabled:opacity-30"><IDownload size={14} /> ロッドCSV</button>
+          <button onClick={onExportReels} disabled={reels.length === 0} className="flex items-center justify-center gap-1.5 py-3 rounded-lg border border-[#26323F] bg-[#131B24] text-[#8A97A6] text-[13px] font-oswald hover:text-[#EAF2F7] hover:border-[#29C4F0] disabled:opacity-30"><IDownload size={14} /> リールCSV</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsScreen({ onReset }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <div className="flex flex-col gap-5">
+      <SectionLabel>このアプリについて</SectionLabel>
+      <div className="bg-[#131B24] border border-[#26323F] rounded-lg p-4 text-[13px] text-[#AEB9C4] font-oswald leading-relaxed">
+        TACKLE LOG はロッドとリールの仕様を記録するための個人用台帳です。データはこのブラウザ(localStorage)に保存され、各画面から CSV としてスプレッドシートに書き出せます。
+      </div>
+      <SectionLabel>データ管理</SectionLabel>
+      <div className="bg-[#131B24] border border-[#26323F] rounded-lg p-4 flex flex-col gap-3">
+        {!confirming ? (
+          <button onClick={() => setConfirming(true)} className="flex items-center gap-2 text-[13px] font-oswald text-[#E2694B] hover:text-[#F08B70] w-fit"><ITrash size={15} /> すべてのデータを削除</button>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-2 text-[12px] text-[#F0A24B] font-oswald"><IAlert size={16} className="shrink-0 mt-0.5" /><span>登録した全てのロッド・リールが完全に削除されます。この操作は取り消せません。</span></div>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirming(false)} className="px-3 py-1.5 text-[12px] font-oswald text-[#8A97A6] hover:text-[#EAF2F7]">キャンセル</button>
+              <button onClick={() => { onReset(); setConfirming(false); }} className="px-3 py-1.5 text-[12px] font-oswald font-semibold bg-[#E2694B] text-[#2A0E07] rounded-md hover:bg-[#F08B70]">削除を実行</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [tab, setTab] = useState("home");
+  const [rods, setRods] = useLocalData("tackle:rods", []);
+  const [reels, setReels] = useLocalData("tackle:reels", []);
+  const [modal, setModal] = useState(null);
+
+  const openNewRod = () => setModal({ type: "rod", data: emptyRod() });
+  const openNewReel = () => setModal({ type: "reel", data: emptyReel() });
+  const closeModal = () => setModal(null);
+  const saveRod = (rod) => { const exists = rods.some((r) => r.id === rod.id); setRods(exists ? rods.map((r) => (r.id === rod.id ? rod : r)) : [...rods, rod]); closeModal(); };
+  const saveReel = (reel) => { const exists = reels.some((r) => r.id === reel.id); setReels(exists ? reels.map((r) => (r.id === reel.id ? reel : r)) : [...reels, reel]); closeModal(); };
+  const deleteRod = (id) => setRods(rods.filter((r) => r.id !== id));
+  const deleteReel = (id) => setReels(reels.filter((r) => r.id !== id));
+  const resetAll = () => { setRods([]); setReels([]); };
+
+  const exportRodsCsv = () => {
+    const header = ["名前", "メーカー", "長さcm", "継数", "アクション", "対象魚", "適合ルアー下限g", "適合ルアー上限g", "適合ライン下限号", "適合ライン上限号", "購入日", "価格", "メモ"];
+    const rows = rods.map((r) => [r.name, r.brand, r.lengthCm, r.pieces, r.action, r.targetFish, r.lureMin, r.lureMax, r.lineGoMin, r.lineGoMax, r.purchaseDate, r.price, r.notes]);
+    downloadCsv("rods.csv", [header, ...rows]);
+  };
+  const exportReelsCsv = () => {
+    const header = ["リール名", "メーカー", "タイプ", "番手", "ギア比", "最大ドラグkg", "自重g", "ライン種類", "太さ号", "強度lb", "長さm", "色/銘柄", "巻いた日", "メモ"];
+    const rows = [];
+    reels.forEach((r) => {
+      if (r.lineSpecs.length === 0) { rows.push([r.name, r.brand, r.type, r.size, r.gearRatio, r.maxDrag, r.weightG, "", "", "", "", "", "", r.notes]); }
+      else { r.lineSpecs.forEach((s, i) => rows.push([r.name, r.brand, r.type, r.size, r.gearRatio, r.maxDrag, r.weightG, s.lineType, s.go, s.lb, s.lengthM, s.color, s.dateSpooled, i === 0 ? r.notes : ""])); }
+    });
+    downloadCsv("reels.csv", [header, ...rows]);
+  };
+
+  const NAV = [
+    { key: "home", label: "ホーム", Icon: IHome },
+    { key: "rods", label: "ロッド", Icon: IWaves },
+    { key: "reels", label: "リール", Icon: IDisc },
+    { key: "export", label: "エクスポート", Icon: IDownload },
+    { key: "settings", label: "設定", Icon: ISettings },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0A0E14] text-[#EAF2F7] flex flex-col font-oswald">
+      <header className="sticky top-0 z-30 bg-[#0A0E14]/95 backdrop-blur border-b border-[#1B2530]">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-2.5">
+          <IAnchor size={20} className="text-[#29C4F0]" />
+          <div>
+            <h1 className="text-[19px] tracking-[0.1em] font-semibold leading-none font-oswald">TACKLE LOG</h1>
+            <p className="text-[10px] tracking-[0.2em] uppercase text-[#6E7C8C] mt-0.5">ロッド &amp; リール管理台帳</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 pb-28">
+        {tab === "home" && <HomeScreen rods={rods} reels={reels} goto={setTab} onAddRod={openNewRod} onAddReel={openNewReel} onExportRods={exportRodsCsv} onExportReels={exportReelsCsv} />}
+        {tab === "rods" && (
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <SectionLabel>ロッド一覧 ({rods.length})</SectionLabel>
+              <button onClick={openNewRod} className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-oswald font-semibold tracking-wide bg-[#29C4F0] text-[#06232B] rounded-md hover:bg-[#6FDBFF]"><IPlus size={15} /> 登録</button>
+            </div>
+            {rods.length === 0 ? <EmptyState kind="rods" onAdd={openNewRod} /> : (
+              <div className="grid sm:grid-cols-2 gap-4">{rods.map((r) => <RodCard key={r.id} rod={r} onEdit={(d) => setModal({ type: "rod", data: d })} onDelete={deleteRod} />)}</div>
+            )}
+          </>
+        )}
+        {tab === "reels" && (
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <SectionLabel>リール一覧 ({reels.length})</SectionLabel>
+              <button onClick={openNewReel} className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-oswald font-semibold tracking-wide bg-[#29C4F0] text-[#06232B] rounded-md hover:bg-[#6FDBFF]"><IPlus size={15} /> 登録</button>
+            </div>
+            {reels.length === 0 ? <EmptyState kind="reels" onAdd={openNewReel} /> : (
+              <div className="grid sm:grid-cols-2 gap-4">{reels.map((r) => <ReelCard key={r.id} reel={r} onEdit={(d) => setModal({ type: "reel", data: d })} onDelete={deleteReel} />)}</div>
+            )}
+          </>
+        )}
+        {tab === "export" && (
+          <div className="flex flex-col gap-5">
+            <SectionLabel>スプレッドシート用に書き出す</SectionLabel>
+            <p className="text-[13px] text-[#8A97A6] font-oswald leading-relaxed -mt-2">登録済みのデータを CSV 形式で書き出します。Excel や Google スプレッドシートにそのまま読み込めます。</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button onClick={exportRodsCsv} disabled={rods.length === 0} className="flex items-center justify-between px-5 py-4 rounded-lg border border-[#26323F] bg-[#131B24] hover:border-[#29C4F0] disabled:opacity-30 text-left">
+                <div><div className="text-[14px] font-oswald font-semibold text-[#EAF2F7]">ロッド一覧を書き出す</div><div className="text-[11px] text-[#6E7C8C] font-oswald mt-0.5">{rods.length} 件 ・ rods.csv</div></div>
+                <IDownload size={18} className="text-[#29C4F0]" />
+              </button>
+              <button onClick={exportReelsCsv} disabled={reels.length === 0} className="flex items-center justify-between px-5 py-4 rounded-lg border border-[#26323F] bg-[#131B24] hover:border-[#29C4F0] disabled:opacity-30 text-left">
+                <div><div className="text-[14px] font-oswald font-semibold text-[#EAF2F7]">リール一覧を書き出す(ライン仕様含む)</div><div className="text-[11px] text-[#6E7C8C] font-oswald mt-0.5">{reels.length} 件 ・ reels.csv</div></div>
+                <IDownload size={18} className="text-[#F0A24B]" />
+              </button>
+            </div>
+          </div>
+        )}
+        {tab === "settings" && <SettingsScreen onReset={resetAll} />}
+      </main>
+
+      <nav className="fixed bottom-0 inset-x-0 z-30 bg-[#0A0E14]/95 backdrop-blur border-t border-[#1B2530]">
+        <div className="max-w-5xl mx-auto grid grid-cols-5">
+          {NAV.map(({ key, label, Icon }) => {
+            const active = tab === key;
+            return (
+              <button key={key} onClick={() => setTab(key)} className="flex flex-col items-center gap-1 py-2.5">
+                <Icon size={20} className={active ? "text-[#29C4F0]" : "text-[#5A6774]"} />
+                <span className={`text-[10px] font-oswald tracking-wide ${active ? "text-[#29C4F0]" : "text-[#5A6774]"}`}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {modal && (
+        <Modal title={modal.type === "rod" ? (rods.some((r) => r.id === modal.data.id) ? "ロッドを編集" : "ロッドを登録") : (reels.some((r) => r.id === modal.data.id) ? "リールを編集" : "リールを登録")} onClose={closeModal}>
+          {modal.type === "rod" ? <RodForm initial={modal.data} onSave={saveRod} onCancel={closeModal} /> : <ReelForm initial={modal.data} onSave={saveReel} onCancel={closeModal} />}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
